@@ -52,17 +52,18 @@ X-ray.
 - Wang: cGAN to remove artifacts from images
 - Yang: combination of a perceputal loss and Wasserstein loss for numerical stability.
 - Yi: sharpness of denoised image: combines pixel-wise loss, adverserial loss and sharpness mapping loss.
+Commmon metrics for denoising (PSNR, MSE, SSIM, SD and mean).
+
 
 Relevant papers:
--Szegedy et al [5] : adverserial training
--Goodfellow [2]: GAN's
--Radford [6]: DCGAN 
--Mirza [7]: cGAN
--8 : U-net
--9 : MGAN
--101 : Wolterink voxel-wise MSE and adversarial loss
--102: Wang cGAN to remove artifacts
--103: Yang 
--104: Yi
-Commmon metrics for denoising (PSNR, MSE, SSIM, SD and mean).
+- Szegedy et al [5] : adverserial training
+- Goodfellow [2]: GAN's
+- Radford [6]: DCGAN 
+- Mirza [7]: cGAN
+- 8 : U-net
+- 9 : MGAN
+- 101 : Wolterink voxel-wise MSE and adversarial loss
+- 102: Wang cGAN to remove artifacts
+- 103: Yang 
+- 104: Yi
 
