@@ -1,5 +1,5 @@
 ## Summary
-Link to paper: https://arxiv.org/pdf/1809.06222.pdf
+Link to paper: https://arxiv.org/pdf/1809.06222.pdf.
 Review of GAN-based architechtures for medical imagge processing applications including:
 - synthesis
 - de-noising
