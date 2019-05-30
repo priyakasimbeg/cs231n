@@ -154,7 +154,7 @@ def run_a_gan(D, G, D_solver, G_solver, discriminator_loss, generator_loss,\
         Nothing
     """
     epid = EPID(batch_size=batch_size)
-    phantom = PHANTOM(batch_size=batch_size) 
+    phantom = PHANTOM(batch_size=batch_size, fake=True) 
 
     g_errors = []
     d_errors = []
