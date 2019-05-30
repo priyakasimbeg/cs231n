@@ -131,7 +131,7 @@ def get_solvers(dlr=1e-4, glr=1e-3, beta1=0.5):
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
     D_solver = tf.optimizers.RMSprop(learning_rate=dlr)
-    G_solver = tf.optimizers.Adam(learning_rate=glr, beta1=beta1)
+    G_solver = tf.optimizers.Adam(learning_rate=glr, beta_1=beta1)
 
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
