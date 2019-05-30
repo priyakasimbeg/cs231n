@@ -1,3 +1,6 @@
+# Constants
+NUM_RESIDUAL_BLOCKS = 4
+
 ## Loss functions
 def discriminator_loss(logits_real, logits_fake):
     """
