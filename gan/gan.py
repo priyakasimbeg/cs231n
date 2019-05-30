@@ -194,7 +194,8 @@ def run_a_gan(D, G, D_solver, G_solver, discriminator_loss, generator_loss,\
 
 class DCGAN():
     def __init__(self):
-        pass
+        self.discriminator = discriminator()
+        self.generator = generator()
   
     def discriminator():
         """Compute discriminator score for a batch of input images.
@@ -256,68 +257,162 @@ class DCGAN():
 class SRGAN():
     
     def __init__(self):
-        pass
+        self.discriminator = discriminator()
+        self.generator = generator()
     
     def discriminator():
-    """Compute discriminator score for a batch of input images.
-    
-    Inputs:
-    - x: TensorFlow Tensor of flattened input images, shape [batch_size, 784]
-    
-    Returns:
-    TensorFlow Tensor with shape [batch_size, 1], containing the score 
-    for an image being real for each input image.
-    """
-    model = tf.keras.models.Sequential([
-        # TODO: implement architecture
-        # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-        
-        tf.keras.layers.Reshape(target_shape=(28,28,1), input_shape=(784,)),
-        tf.keras.layers.Conv2D(filters=64, kernel_size=(3,3), strides=1,
-                              padding='same'),
-        tf.keras.layers.LeakyReLU(alpha=0.01),
-        
-        tf.keras.layers.Conv2D(filters=64, kernel_size=(3,3), strides=2,
-                              padding='same'),
-        tf.keras.layers.BatchNormalization(),
-        tf.keras.layers.LeakyReLU(alpha=0.01),
-        
-        tf.keras.layers.Conv2D(filters=128, kernel_size=(3,3), strides=1,
-                              padding='same'),
-        tf.keras.layers.BatchNormalization(),
-        tf.keras.layers.LeakyReLU(alpha=0.01),
-        
-        tf.keras.layers.Conv2D(filters=128, kernel_size=(3,3), strides=2,
-                              padding='same'),
-        tf.keras.layers.BatchNormalization(),
-        tf.keras.layers.LeakyReLU(alpha=0.01),
-        
-        tf.keras.layers.Conv2D(filters=256, kernel_size=(3,3), strides=1,
-                      padding='same'),
-        tf.keras.layers.BatchNormalization(),
-        tf.keras.layers.LeakyReLU(alpha=0.01),
-        
-        tf.keras.layers.Conv2D(filters=256, kernel_size=(3,3), strides=2,
-                      padding='same'),
-        tf.keras.layers.BatchNormalization(),
-        tf.keras.layers.LeakyReLU(alpha=0.01),
-        
-        tf.keras.layers.Conv2D(filters=512, kernel_size=(3,3), strides=1,
-                      padding='same'),
-        tf.keras.layers.BatchNormalization(),
-        tf.keras.layers.LeakyReLU(alpha=0.01),
-        
-        tf.keras.layers.Conv2D(filters=512, kernel_size=(3,3), strides=2,
-                      padding='same'),
-        tf.keras.layers.BatchNormalization(),
-        tf.keras.layers.LeakyReLU(alpha=0.01),
-        
-        tf.keras.layers.Flatten(),
-        tf.keras.layers.Dense(units=1024),
-        tf.keras.layers.LeakyReLU(alpha=0.01),
-        tf.keras.layers.Dense(units=1)
+        """Compute discriminator score for a batch of input images.
 
-        # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-    ])
-    return model
+        Inputs:
+        - x: TensorFlow Tensor of flattened input images, shape [batch_size, 784]
+
+        Returns:
+        TensorFlow Tensor with shape [batch_size, 1], containing the score 
+        for an image being real for each input image.
+        """
+        model = tf.keras.models.Sequential([
+            # TODO: implement architecture
+            # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
+
+            tf.keras.layers.Reshape(target_shape=(28,28,1), input_shape=(784,)),
+            tf.keras.layers.Conv2D(filters=64, kernel_size=(3,3), strides=1,
+                                  padding='same'),
+            tf.keras.layers.LeakyReLU(alpha=0.01),
+
+            tf.keras.layers.Conv2D(filters=64, kernel_size=(3,3), strides=2,
+                                  padding='same'),
+            tf.keras.layers.BatchNormalization(),
+            tf.keras.layers.LeakyReLU(alpha=0.01),
+
+            tf.keras.layers.Conv2D(filters=128, kernel_size=(3,3), strides=1,
+                                  padding='same'),
+            tf.keras.layers.BatchNormalization(),
+            tf.keras.layers.LeakyReLU(alpha=0.01),
+
+            tf.keras.layers.Conv2D(filters=128, kernel_size=(3,3), strides=2,
+                                  padding='same'),
+            tf.keras.layers.BatchNormalization(),
+            tf.keras.layers.LeakyReLU(alpha=0.01),
+
+            tf.keras.layers.Conv2D(filters=256, kernel_size=(3,3), strides=1,
+                          padding='same'),
+            tf.keras.layers.BatchNormalization(),
+            tf.keras.layers.LeakyReLU(alpha=0.01),
+
+            tf.keras.layers.Conv2D(filters=256, kernel_size=(3,3), strides=2,
+                          padding='same'),
+            tf.keras.layers.BatchNormalization(),
+            tf.keras.layers.LeakyReLU(alpha=0.01),
+
+            tf.keras.layers.Conv2D(filters=512, kernel_size=(3,3), strides=1,
+                          padding='same'),
+            tf.keras.layers.BatchNormalization(),
+            tf.keras.layers.LeakyReLU(alpha=0.01),
+
+            tf.keras.layers.Conv2D(filters=512, kernel_size=(3,3), strides=2,
+                          padding='same'),
+            tf.keras.layers.BatchNormalization(),
+            tf.keras.layers.LeakyReLU(alpha=0.01),
+
+            tf.keras.layers.Flatten(),
+            tf.keras.layers.Dense(units=1024),
+            tf.keras.layers.LeakyReLU(alpha=0.01),
+            tf.keras.layers.Dense(units=1)
+
+            # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
+        ])
+        return model
+
+    
+    def generator():
+        model = ResNetGenerator(NUM_RESIDUAL_BLOCKS)
+        return model
+
+
+class ResidualBlock(tf.keras.Model):
+    def __init__(self, kernels, filters):
+        super(ResidualBlock, self).__init__()
+        self.conv1 = tf.keras.layers.Conv2D(filters=filters[0], 
+                                            kernel_size=kernels[0], 
+                                            strides=1, padding='same')
+        self.bn1 = tf.keras.layers.BatchNormalization()
+        self.prelu1 = tf.keras.layers.LeakyReLU()
+        self.conv2 = tf.keras.layers.Conv2D(filters=filters[1], 
+                                            kernel_size=kernels[1], 
+                                            strides=1, padding='same')
+        self.bn2 = tf.keras.layers.BatchNormalization()
+        self.prelu2 = tf.keras.layers.LeakyReLU()
+
+    def call(self, x):
+        x = self.conv1(x)
+        x = self.bn1(x)
+        x = self.prelu1(x)
+        x = self.conv2(x)
+        x = self.bn2(x)
+        x = self.prelu2(x)
+        return x  
+    
+class ResBlockSequence(tf.keras.Model):
+    def __init__(self, kernels, filters, num_blocks):
+        super(ResBlockSequence, self).__init__()
+        self.kernels = kernels
+        self.filters = filters
+        self.num_blocks = num_blocks
+        
+        self.conv = tf.keras.layers.Conv2D(filters=64, kernel_size=[3,3],
+                                           strides=1, padding='same')
+        self.bn = tf.keras.layers.BatchNormalization()
+        
+    def call(self, x):
+        for block in range(self.num_blocks):
+            rb = ResidualBlock(self.kernels, self.filters)
+            x += rb(x)
+        x = self.conv(x)
+        x = self.bn(x)
+        return x
+              
+class SmoothingBlock(tf.keras.Model):
+        def __init__(self, kernels, filters):
+            super(SmoothingBlock, self).__init__()
+            self.conv1 = tf.keras.layers.Conv2D(filters=filters[0], 
+                                                kernel_size=kernels[0], 
+                                                strides=1, padding='same')
+            #TODO: pixel shuffler
+            self.prelu1 = tf.keras.layers.LeakyReLU()
+            self.conv2 = tf.keras.layers.Conv2D(filters=filters[1], 
+                                                kernel_size=kernels[1], 
+                                                strides=1, padding='same')
+            self.prelu2 = tf.keras.layers.LeakyReLU()
+            
+        def call(self, x):
+            x = self.conv1(x)
+            #TODO: implement shuffle
+            x = self.prelu1(x)
+            x = self.conv2(x)
+            #TODO: implement shuffle
+            x = self.prelu2(x)
+            return x
+
+class ResNetGenerator(tf.keras.Model):
+    def __init__(self, num_blocks):
+        super(ResNetGenerator, self).__init__()  
+        self.conv1 = tf.keras.layers.Conv2D(filters=64, kernel_size=[9,9],
+                                           strides=1, padding='same')
+        self.prelu1 = tf.keras.layers.LeakyReLU()
+        
+        self.conv2 = tf.keras.layers.Conv2D(filters=1, kernel_size=[9,9], 
+                                           strides=1, padding='same',
+                                            activation='tanh')
+        self.num_blocks = num_blocks
+        
+    def call(self, x, training=False):
+        x = self.conv1(x)
+        x = self.prelu1(x)
+        kernels, filters = [[3, 3], [3, 3]], [64, 64]
+        rbs = ResBlockSequence(kernels, filters, self.num_blocks)
+        x += rbs(x)
+        sb = SmoothingBlock(kernels, [256, 256])
+        x = sb(x)
+        x = self.conv2(x) 
+        return x
 
