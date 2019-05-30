@@ -1,15 +1,15 @@
 import scipy
 from PIL import Image, ImageFilter
 
-DIM = 28
-NOISE_DIM = DIM * DIM
-
 import tensorflow as tf
 import numpy as np
 import os
 
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
+
+DIM = 28
+NOISE_DIM = DIM * DIM
 
 plt.rcParams['figure.figsize'] = (10.0, 8.0) # set default size of plots
 plt.rcParams['image.interpolation'] = 'nearest'
@@ -48,6 +48,21 @@ def count_params(model):
     param_count = np.sum([np.prod(p.shape) for p in model.weights])
     return param_count
 
+def sample_noise(batch_size, dim):
+    """Generate random uniform noise from -1 to 1.
+    
+    Inputs:
+    - batch_size: integer giving the batch size of noise to generate
+    - dim: integer giving the dimension of the noise to generate
+    
+    Returns:
+    TensorFlow Tensor containing uniform noise in [-1, 1] with shape [batch_size, dim]
+    """
+
+    return tf.random.uniform([batch_size, dim], minval=-1, maxval=1)
+
+    
+    
 ## Data
 def load_data(data_dir, blur = False, noise=False):
     image_paths = [os.path.join(data_dir, filename) for filename in os.listdir(data_dir)]

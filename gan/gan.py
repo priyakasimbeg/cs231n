@@ -1,5 +1,14 @@
+import tensorflow as tf
+import numpy as np
+import os
+from gan.utils import *
+
 # Constants
 NUM_RESIDUAL_BLOCKS = 4
+DIM = 28
+NOISE_DIM = DIM * DIM
+INPUT = DIM * DIM
+
 
 ## Loss functions
 def discriminator_loss(logits_real, logits_fake):
@@ -197,10 +206,10 @@ def run_a_gan(D, G, D_solver, G_solver, discriminator_loss, generator_loss,\
 
 class DCGAN():
     def __init__(self):
-        self.discriminator = discriminator()
-        self.generator = generator()
+        self.D = self.discriminator()
+        self.G = self.generator()
   
-    def discriminator():
+    def discriminator(self):
         """Compute discriminator score for a batch of input images.
 
         Inputs:
@@ -230,7 +239,7 @@ class DCGAN():
         ])
         return model
     
-    def generator(noise_dim=NOISE_DIM):
+    def generator(self, noise_dim=NOISE_DIM):
         """Generate images from a random noise vector.
 
         Inputs:
@@ -260,10 +269,10 @@ class DCGAN():
 class SRGAN():
     
     def __init__(self):
-        self.discriminator = discriminator()
-        self.generator = generator()
+        self.D = self.discriminator()
+        self.G = self.generator()
     
-    def discriminator():
+    def discriminator(self):
         """Compute discriminator score for a batch of input images.
 
         Inputs:
@@ -327,7 +336,7 @@ class SRGAN():
         return model
 
     
-    def generator():
+    def generator(self):
         model = ResNetGenerator(NUM_RESIDUAL_BLOCKS)
         return model
 
