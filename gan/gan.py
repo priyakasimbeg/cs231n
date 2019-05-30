@@ -130,7 +130,7 @@ def get_solvers(dlr=1e-4, glr=1e-3, beta1=0.5):
     G_solver = None
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    D_solver = tf.optimizers.Adam(dlr, 0.3)
+    D_solver = tf.optimizers.RMSprop(dlr, 0.3)
     G_solver = tf.optimizers.Adam(glr, 0.5)
 
 
@@ -139,7 +139,8 @@ def get_solvers(dlr=1e-4, glr=1e-3, beta1=0.5):
 
 # a giant helper function
 def run_a_gan(D, G, D_solver, G_solver, discriminator_loss, generator_loss,\
-              show_every=20, print_every=20, batch_size=100, num_epochs=10, input_size=NOISE_DIM, tv_reg=1e-4):
+              show_every=20, print_every=20, batch_size=100, num_epochs=10, input_size=NOISE_DIM, 
+              tv_reg=1e-4):
     """Train a GAN for a certain number of epochs.
     
     Inputs:
