@@ -190,6 +190,7 @@ def run_a_gan(D, G, D_solver, G_solver, discriminator_loss, generator_loss,\
                 imgs_numpy = fake_images.cpu().numpy()
                 show_images(imgs_numpy[0:16])
                 plt.show()
+                plt.savefig('images_', iter_count, '.png')
             iter_count += 1
             
             g_errors.append(g_error)
@@ -202,6 +203,7 @@ def run_a_gan(D, G, D_solver, G_solver, discriminator_loss, generator_loss,\
     print('Final images')
     show_images(G_sample[:16])
     plt.show()
+    plt.savefig('final_images.png')
     
     return g_errors, d_errors
 
