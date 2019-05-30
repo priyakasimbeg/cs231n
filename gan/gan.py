@@ -4,7 +4,7 @@ import os
 from gan.utils import *
 
 # Constants
-NUM_RESIDUAL_BLOCKS = 4
+NUM_RESIDUAL_BLOCKS = 5
 DIM = 28
 NOISE_DIM = DIM * DIM
 INPUT = DIM * DIM
@@ -115,7 +115,7 @@ def tv_loss(img, tv_weight):
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-def get_solvers(learning_rate=1e-3, beta1=0.5):
+def get_solvers(dlr=1e-4, glr=1e-3, beta1=0.5):
     """Create solvers for GAN training.
     
     Inputs:
@@ -130,8 +130,8 @@ def get_solvers(learning_rate=1e-3, beta1=0.5):
     G_solver = None
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    D_solver = tf.optimizers.Adam(1e-3, 0.3)
-    G_solver = tf.optimizers.Adam(1e-3, 0.5)
+    D_solver = tf.optimizers.Adam(dlr, 0.3)
+    G_solver = tf.optimizers.Adam(glr, 0.5)
 
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
@@ -139,7 +139,7 @@ def get_solvers(learning_rate=1e-3, beta1=0.5):
 
 # a giant helper function
 def run_a_gan(D, G, D_solver, G_solver, discriminator_loss, generator_loss,\
-              show_every=20, print_every=20, batch_size=128, num_epochs=10, noise_size=NOISE_DIM):
+              show_every=20, print_every=20, batch_size=100, num_epochs=10, input_size=NOISE_DIM, tv_reg=1e-4):
     """Train a GAN for a certain number of epochs.
     
     Inputs:
@@ -165,7 +165,6 @@ def run_a_gan(D, G, D_solver, G_solver, discriminator_loss, generator_loss,\
                 logits_real = D(preprocess_img(real_data))
 
 #                 g_fake_seed = sample_noise(batch_size, noise_size)
-            
                 g_fake_seed = y
                 fake_images = G(g_fake_seed)
 
@@ -176,11 +175,12 @@ def run_a_gan(D, G, D_solver, G_solver, discriminator_loss, generator_loss,\
                 D_solver.apply_gradients(zip(d_gradients, D.trainable_variables))
             
             with tf.GradientTape() as tape:
-                g_fake_seed = sample_noise(batch_size, noise_size)
+                g_fake_seed = sample_noise(batch_size, input_size)
                 fake_images = G(g_fake_seed)
 
                 gen_logits_fake = D(tf.reshape(fake_images, [batch_size, INPUT]))
-                g_error = generator_loss(gen_logits_fake)
+                fake_images = tf.keras.layers.Reshape((DIM,DIM,1))(fake_images)
+                g_error = generator_loss(gen_logits_fake) + tv_reg * tf.reduce_sum(tf.image.total_variation(fake_images))
                 g_gradients = tape.gradient(g_error, G.trainable_variables)      
                 G_solver.apply_gradients(zip(g_gradients, G.trainable_variables))
 
@@ -195,7 +195,7 @@ def run_a_gan(D, G, D_solver, G_solver, discriminator_loss, generator_loss,\
             d_errors.append(d_total_error)
     
     # random noise fed into our generator
-    z = sample_noise(batch_size, noise_size)
+    z = sample_noise(batch_size, input_size)
     # generated images
     G_sample = G(z)
     print('Final images')
@@ -268,9 +268,9 @@ class DCGAN():
     
 class SRGAN():
     
-    def __init__(self):
+    def __init__(self, num_residual_blocks):
         self.D = self.discriminator()
-        self.G = self.generator()
+        self.G = self.generator(num_residual_blocks)
     
     def discriminator(self):
         """Compute discriminator score for a batch of input images.
@@ -286,7 +286,7 @@ class SRGAN():
             # TODO: implement architecture
             # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-            tf.keras.layers.Reshape(target_shape=(28,28,1), input_shape=(784,)),
+            tf.keras.layers.Reshape(target_shape=(DIM,DIM,1), input_shape=(INPUT,)),
             tf.keras.layers.Conv2D(filters=64, kernel_size=(3,3), strides=1,
                                   padding='same'),
             tf.keras.layers.LeakyReLU(alpha=0.01),
@@ -336,8 +336,8 @@ class SRGAN():
         return model
 
     
-    def generator(self):
-        model = ResNetGenerator(NUM_RESIDUAL_BLOCKS)
+    def generator(self, num_residual_blocks):
+        model = ResNetGenerator(num_residual_blocks)
         return model
 
 
@@ -407,17 +407,20 @@ class SmoothingBlock(tf.keras.Model):
 
 class ResNetGenerator(tf.keras.Model):
     def __init__(self, num_blocks):
-        super(ResNetGenerator, self).__init__()  
+        super(ResNetGenerator, self).__init__() 
+        self.shapein = tf.keras.layers.Reshape((DIM, DIM, 1), input_shape=(INPUT,))
         self.conv1 = tf.keras.layers.Conv2D(filters=64, kernel_size=[9,9],
                                            strides=1, padding='same')
         self.prelu1 = tf.keras.layers.LeakyReLU()
         
         self.conv2 = tf.keras.layers.Conv2D(filters=1, kernel_size=[9,9], 
                                            strides=1, padding='same',
-                                            activation='tanh')
+                                           activation='tanh')
+        self.shapeout = tf.keras.layers.Reshape((784,))
         self.num_blocks = num_blocks
         
     def call(self, x, training=False):
+        x = self.shapein(x)
         x = self.conv1(x)
         x = self.prelu1(x)
         kernels, filters = [[3, 3], [3, 3]], [64, 64]
@@ -425,6 +428,7 @@ class ResNetGenerator(tf.keras.Model):
         x += rbs(x)
         sb = SmoothingBlock(kernels, [256, 256])
         x = sb(x)
-        x = self.conv2(x) 
+        x = self.conv2(x)
+        x = self.shapeout(x)
         return x
 
