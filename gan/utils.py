@@ -82,15 +82,15 @@ def load_data(data_dir, blur = False, noise=False):
         im = np.array(im).flatten()
         
         if noise:
-            im = im +  10 * np.random.randn(im.shape[0])
+            im = im +  5 * np.random.randn(im.shape[0])
             
         X[i] = im
     return X
 
 
 class EPID(object):
-    def __init__(self, batch_size, shuffle=False):
-        data_dir = "data/train"
+    def __init__(self, batch_size, shuffle=False, data_base_dir='data'):
+        data_dir = os.path.join(data_base_dir, 'train')
         X = load_data(data_dir)
         X = X.astype(np.float32)/255
         X = X.reshape((X.shape[0], -1))
@@ -103,15 +103,25 @@ class EPID(object):
         if self.shuffle:
             np.random.shuffle(idxs)
         return iter((self.X[i:i+B]) for i in range(0, N, B)) 
+    
+    def get_tensor(self, index):
+        image = self.X[index]
+        image = np.reshape(image, (1, DIM, DIM, 1))
+        return tf.multiply(image, 1)
+    
+    def get_2Darray(self, index):
+        image = self.X[index]
+        image = np.reshape(image, (DIM, DIM))
+        return image
+                     
 
 class PHANTOM(object):
-    def __init__(self, batch_size, shuffle=False, fake=False):
-        
+    def __init__(self, batch_size, shuffle=False, fake=False, data_base_dir='data'):
         if fake:
-            data_dir = "data/train"
+            data_dir = os.path.join(data_base_dir, 'train')
             X = load_data(data_dir, blur=True, noise=True)
         else:
-            data_dir = "data/noise"
+            data_dir = os.path.join(data_base_dir, 'noise')
             X = load_data(data_dir)
             
         X = X.astype(np.float32)/255
@@ -126,4 +136,31 @@ class PHANTOM(object):
             np.random.shuffle(idxs)
         return iter((self.X[i:i+B]) for i in range(0, N, B))
     
+    def get_tensor(self, index):
+        image = self.X[index]
+        image = np.reshape(image, (1, DIM, DIM, 1))
+        return tf.multiply(image, 1)
+    
+    def get_2Darray(self, index):
+        image = self.X[index]
+        image = np.reshape(image, (DIM, DIM))
+        return image
+    
+def array_to_tensor(x):
+    H, W = np.shape(x)
+    x = np.reshape(x, (1, H, W, 1))
+    return tf.multiply(x, 1)
+
+def tensor_to_array(x):
+    _, H, W, _ = x.shape.as_list()      
+    x = np.reshape(x, (H, W))
+    return x 
+
+def plot_tensor(x):
+    """
+    Plots a tensor representing an image.
+    """
+    plt.imshow(tensor_to_array(x))
+    plt.show()
+                
   

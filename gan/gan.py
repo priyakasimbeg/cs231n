@@ -2,6 +2,7 @@ import tensorflow as tf
 import numpy as np
 import os
 from gan.utils import *
+from gan.metrics import *
 
 # Constants
 NUM_RESIDUAL_BLOCKS = 5
@@ -176,12 +177,13 @@ def run_a_gan(D, G, D_solver, G_solver, discriminator_loss, generator_loss,\
                 D_solver.apply_gradients(zip(d_gradients, D.trainable_variables))
             
             with tf.GradientTape() as tape:
-                g_fake_seed = sample_noise(batch_size, input_size)
+#                 g_fake_seed = sample_noise(batch_size, input_size)
+                g_fake_seed = y
                 fake_images = G(g_fake_seed)
 
                 gen_logits_fake = D(tf.reshape(fake_images, [batch_size, INPUT]))
                 fake_images = tf.keras.layers.Reshape((DIM,DIM,1))(fake_images)
-                g_error = generator_loss(gen_logits_fake) + tv_reg * tf.reduce_sum(tf.image.total_variation(fake_images))
+                g_error = 1e-3 * generator_loss(gen_logits_fake) + mse(real_data, tf.reshape(fake_images, [batch_size, INPUT])) + tv_reg * tf.reduce_sum(tf.image.total_variation(fake_images))
                 g_gradients = tape.gradient(g_error, G.trainable_variables)      
                 G_solver.apply_gradients(zip(g_gradients, G.trainable_variables))
 
@@ -190,7 +192,7 @@ def run_a_gan(D, G, D_solver, G_solver, discriminator_loss, generator_loss,\
                 imgs_numpy = fake_images.cpu().numpy()
                 show_images(imgs_numpy[0:16])
                 plt.show()
-                plt.savefig('images_', iter_count, '.png')
+                plt.savefig('images_{}.png'.format(iter_count))
             iter_count += 1
             
             g_errors.append(g_error)
