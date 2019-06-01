@@ -140,8 +140,8 @@ def get_solvers(dlr=1e-4, glr=1e-3, beta1=0.5):
 
 # a giant helper function
 def run_a_gan(D, G, D_solver, G_solver, discriminator_loss, generator_loss,\
-              show_every=20, print_every=20, batch_size=100, num_epochs=10, input_size=NOISE_DIM, 
-              tv_reg=1e-4):
+              show_every=20, print_every=20, batch_size=100, num_epochs=10, 
+              input_size=NOISE_DIM, gen_reg = 5e-5, tv_reg=1e-4, gen_steps_per_discrimination=1):
     """Train a GAN for a certain number of epochs.
     
     Inputs:
@@ -176,23 +176,24 @@ def run_a_gan(D, G, D_solver, G_solver, discriminator_loss, generator_loss,\
                 d_gradients = tape.gradient(d_total_error, D.trainable_variables)      
                 D_solver.apply_gradients(zip(d_gradients, D.trainable_variables))
             
-            with tf.GradientTape() as tape:
-#                 g_fake_seed = sample_noise(batch_size, input_size)
-                g_fake_seed = y
-                fake_images = G(g_fake_seed)
+            for j in range(gen_steps_per_discrimination):
+                with tf.GradientTape() as tape:
+    #                 g_fake_seed = sample_noise(batch_size, input_size)
+                    g_fake_seed = y
+                    fake_images = G(g_fake_seed)
 
-                gen_logits_fake = D(tf.reshape(fake_images, [batch_size, INPUT]))
-                fake_images = tf.keras.layers.Reshape((DIM,DIM,1))(fake_images)
-                g_error = 1e-3 * generator_loss(gen_logits_fake) + mse(real_data, tf.reshape(fake_images, [batch_size, INPUT])) + tv_reg * tf.reduce_sum(tf.image.total_variation(fake_images))
-                g_gradients = tape.gradient(g_error, G.trainable_variables)      
-                G_solver.apply_gradients(zip(g_gradients, G.trainable_variables))
+                    gen_logits_fake = D(tf.reshape(fake_images, [batch_size, INPUT]))
+                    fake_images = tf.keras.layers.Reshape((DIM,DIM,1))(fake_images)
+                    g_error = effective_generator_loss(real_data, fake_images, gen_logits_fake, batch_size, gen_reg, tv_reg)
+                    g_gradients = tape.gradient(g_error, G.trainable_variables)      
+                    G_solver.apply_gradients(zip(g_gradients, G.trainable_variables))
 
             if (iter_count % show_every == 0):
                 print('Epoch: {}, Iter: {}, D: {:.4}, G:{:.4}'.format(epoch, iter_count,d_total_error,g_error))
                 imgs_numpy = fake_images.cpu().numpy()
                 show_images(imgs_numpy[0:16])
-                plt.show()
                 plt.savefig('images_{}.png'.format(iter_count))
+                plt.show()
             iter_count += 1
             
             g_errors.append(g_error)
@@ -208,6 +209,14 @@ def run_a_gan(D, G, D_solver, G_solver, discriminator_loss, generator_loss,\
     plt.savefig('final_images.png')
     
     return g_errors, d_errors
+
+def effective_generator_loss(real_data, fake_data, gen_logits_fake, batch_size, gen_reg, tv_reg):
+    
+    gen_loss = generator_loss(gen_logits_fake)
+    mse_loss = mse(real_data, tf.reshape(fake_data, [batch_size, INPUT])) 
+    tv_loss =  tf.reduce_sum(tf.image.total_variation(fake_data))
+    
+    return gen_reg * gen_loss + mse_loss + tv_reg * tv_loss
 
 class DCGAN():
     def __init__(self):
