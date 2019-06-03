@@ -3,10 +3,12 @@ import numpy as np
 import os
 from gan.utils import *
 from gan.metrics import *
+from tensorflow.keras.applications.vgg16 import VGG16
+# import tensorflow.contrib.gan.losses.wargs as wargs
 
 # Constants
 NUM_RESIDUAL_BLOCKS = 5
-DIM = 28
+DIM = 32
 NOISE_DIM = DIM * DIM
 INPUT = DIM * DIM
 
@@ -24,14 +26,12 @@ def discriminator_loss(logits_real, logits_fake):
     - loss: Tensor containing (scalar) the loss for the discriminator.
     """
     loss = None
-    # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     cross_entropy = tf.keras.losses.BinaryCrossentropy(from_logits=True)
 
     real_loss = cross_entropy(tf.ones_like(logits_real), logits_real)
     fake_loss = cross_entropy(tf.zeros_like(logits_fake), logits_fake)
     loss = real_loss + fake_loss
 
-    # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     return loss
 
 def generator_loss(logits_fake):
@@ -45,12 +45,9 @@ def generator_loss(logits_fake):
     - loss: PyTorch Tensor containing the (scalar) loss for the generator.
     """
     loss = None
-    # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     cross_entropy = tf.keras.losses.BinaryCrossentropy(from_logits=True)
-
     loss = cross_entropy(tf.ones_like(logits_fake), logits_fake)
 
-    # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     return loss
 
 def ls_discriminator_loss(scores_real, scores_fake):
@@ -65,11 +62,8 @@ def ls_discriminator_loss(scores_real, scores_fake):
     - loss: A Tensor containing the loss.
     """
     loss = None
-    # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
     loss = 1/2 * (tf.reduce_mean(tf.math.square(scores_real - 1)) +  tf.reduce_mean(tf.math.square(scores_fake)))
 
-    # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     return loss
 
 def ls_generator_loss(scores_fake):
@@ -83,11 +77,9 @@ def ls_generator_loss(scores_fake):
     - loss: A Tensor containing the loss.
     """
     loss = None
-    # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
     loss = 1/2 * tf.reduce_mean(tf.math.square(scores_fake - 1))
 
-    # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     return loss
 
 def tv_loss(img, tv_weight):
@@ -102,9 +94,6 @@ def tv_loss(img, tv_weight):
     - loss: Tensor holding a scalar giving the total variation loss
       for img weighted by tv_weight.
     """
-    # Your implementation should be vectorized and not require any loops!
-    # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-    
     _, H, W, C = img.shape
     shift_h = tf.roll(img, shift=-1, axis=1)
     diff = tf.reshape(tf.transpose(shift_h - img, perm=(1,0,2,3)), (H, -1))[:-1,:]
@@ -112,9 +101,38 @@ def tv_loss(img, tv_weight):
     shift_v = tf.roll(img, shift=-1, axis=2)
     diff = tf.reshape(tf.transpose(shift_h - img, perm=(2,0,1,3)), (W, -1))[:-1,:]
     loss += tf.reduce_sum(tf.math.square(diff))
-    return tv_weight * loss
+    return tv_weight * loss    
+    
+def feature_mapping_loss(intermediate_real, gen_intermediate_fake):
+    
+    return tf.reduce_sum(tf.square(tf.reduce_mean(intermediate_real, axis=0) - tf.reduce_mean(gen_intermediate_fake, axis=0)))
 
-    # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
+def wasserstein_loss_discriminator(discriminator_real_outputs, discriminator_gen_outputs):
+    loss = tf.reduce_mean(discriminator_real_outputs) - tf.reduce_mean(discriminator_gen_outputs)
+    return loss 
+
+def wasserstein_loss_generator(discriminator_gen_outputs):
+    loss = -tf.reduce_mean(discriminator_gen_outputs)
+    return loss
+
+def wasserstein_gradient_penalty(real_data, generated_data, generator_inputs, discriminator_fn, discriminator_scope):
+    return wargs.wasserstein_gradient_penalty(
+    real_data,
+    generated_data,
+    generator_inputs,
+    discriminator_fn,
+    discriminator_scope)
+
+def effective_generator_loss(real_data, fake_data, gen_logits_fake, batch_size, tv_reg, gen_reg,
+                            intermediate_real, gen_intermediate_fake):
+    
+    gen_loss = generator_loss(gen_logits_fake)
+    mse_loss = mse(real_data, tf.reshape(fake_data, [batch_size, INPUT])) 
+    tv_loss = tv_reg * tf.reduce_sum(tf.image.total_variation(fake_data))
+    fm_loss = feature_mapping_loss(intermediate_real, gen_intermediate_fake)
+    
+#     return gen_reg * gen_loss + mse_loss + fm_loss + tv_reg * tv_loss
+    return gen_reg * gen_loss 
 
 def get_solvers(dlr=1e-4, glr=1e-3, beta1=0.5):
     """Create solvers for GAN training.
@@ -139,7 +157,7 @@ def get_solvers(dlr=1e-4, glr=1e-3, beta1=0.5):
     return D_solver, G_solver
 
 # a giant helper function
-def run_a_gan(D, G, D_solver, G_solver, discriminator_loss, generator_loss,\
+def run_a_gan(GAN, D_solver, G_solver, discriminator_loss, generator_loss,\
               show_every=20, print_every=20, batch_size=100, num_epochs=10, 
               input_size=NOISE_DIM, gen_reg=5e-5, tv_reg=1e-4, gen_steps_per_discrimination=1):
     """Train a GAN for a certain number of epochs.
@@ -154,14 +172,21 @@ def run_a_gan(D, G, D_solver, G_solver, discriminator_loss, generator_loss,\
     Returns:
         Nothing
     """
+    D = GAN.D
+    G = GAN.G
+    
     epid = EPID(batch_size=batch_size)
-    phantom = PHANTOM(batch_size=batch_size, fake=True) 
+    phantom = PHANTOM(batch_size=batch_size, fake=True)
 
     g_errors = []
     d_errors = []
     iter_count = 0
     for epoch in range(num_epochs):
         for x, y in zip(epid, phantom):
+            
+            content_loss = 'mse'
+            
+            ## Update Discriminator
             with tf.GradientTape() as tape:
                 real_data = x
                 intermediate_real, logits_real = D(preprocess_img(real_data))
@@ -174,26 +199,41 @@ def run_a_gan(D, G, D_solver, G_solver, discriminator_loss, generator_loss,\
 
                 d_total_error = discriminator_loss(logits_real, logits_fake)
                 d_gradients = tape.gradient(d_total_error, D.trainable_variables)      
-                D_solver.apply_gradients(zip(d_gradients, D.trainable_variables))
+                D_solver.apply_gradients(zip(d_gradients, D.trainable_variables))            
                 
-            
+            ## Update Generator              
             for j in range(gen_steps_per_discrimination):
                 with tf.GradientTape() as tape:
-    #                 g_fake_seed = sample_noise(batch_size, input_size)
                     g_fake_seed = y
                     fake_images = G(g_fake_seed)
 
                     gen_intermediate_fake, gen_logits_fake = D(tf.reshape(fake_images, [batch_size, INPUT]))
                     fake_images = tf.keras.layers.Reshape((DIM,DIM,1))(fake_images)
                     
-                    g_error = effective_generator_loss(real_data, fake_images, gen_logits_fake, batch_size, tv_reg,
-                                                       gen_reg,intermediate_real, gen_intermediate_fake)
+                    mse_loss = mse(real_data, tf.reshape(fake_images, [batch_size, INPUT])) 
+                    gen_loss = generator_loss(gen_logits_fake)
+                    fm_loss = feature_mapping_loss(intermediate_real, gen_intermediate_fake)
+                    g_perceptual_loss = GAN.vgg_content_loss(real_data, fake_images)
+
+                    if mse_loss <= 500:
+                        content_loss = 'perceptual_loss'
+                        
+                    if content_loss == 'perceptual_loss': 
+                        g_error = g_perceptual_loss 
+                    else:
+                        g_error = mse_loss + gen_loss + fm_loss
                     
-                    g_gradients = tape.gradient(g_error, G.trainable_variables)      
+                    g_gradients = tape.gradient(g_error, G.trainable_variables)  
+               
                     G_solver.apply_gradients(zip(g_gradients, G.trainable_variables))
 
             if (iter_count % show_every == 0):
                 print('Epoch: {}, Iter: {}, D: {:.4}, G:{:.4}'.format(epoch, iter_count,d_total_error,g_error))
+                print('MSE loss: {}'.format(mse_loss))
+                print('gen loss: {}'.format(gen_loss))
+                print('fm loss: {}'.format(fm_loss))
+                print('g_perceptual_loss: {}'.format(g_perceptual_loss))
+                
                 imgs_numpy = fake_images.cpu().numpy()
                 show_images(imgs_numpy[0:16])
                 plt.savefig('images_{}.png'.format(iter_count))
@@ -215,21 +255,6 @@ def run_a_gan(D, G, D_solver, G_solver, discriminator_loss, generator_loss,\
     return g_errors, d_errors
 
 
-def feature_mapping_loss(intermediate_real, gen_intermediate_fake):
-    
-    return tf.reduce_sum(tf.square(tf.reduce_mean(intermediate_real, axis=0) - tf.reduce_mean(gen_intermediate_fake, axis=0)))
-
-    
-def effective_generator_loss(real_data, fake_data, gen_logits_fake, batch_size, tv_reg, gen_reg,
-                            intermediate_real, gen_intermediate_fake):
-    
-    gen_loss = generator_loss(gen_logits_fake)
-    mse_loss = mse(real_data, tf.reshape(fake_data, [batch_size, INPUT])) 
-    tv_loss = tv_reg * tf.reduce_sum(tf.image.total_variation(fake_data))
-    fm_loss = feature_mapping_loss(intermediate_real, gen_intermediate_fake)
-    
-    return gen_reg * gen_loss + mse_loss + fm_loss + tv_reg * tv_loss
-
 class DCGAN():
     def __init__(self):
         self.D = self.discriminator()
@@ -247,8 +272,6 @@ class DCGAN():
         """
         model = tf.keras.models.Sequential([
             # TODO: implement architecture
-            # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
             tf.keras.layers.Reshape((DIM, DIM, 1), input_shape=(INPUT, )),
             tf.keras.layers.Conv2D(32, 5, padding='valid',),
             tf.keras.layers.LeakyReLU(alpha=0.01),
@@ -260,8 +283,6 @@ class DCGAN():
             tf.keras.layers.Dense(4 * 4 * 64),
             tf.keras.layers.LeakyReLU(alpha=0.01),
             tf.keras.layers.Dense(1)
-
-            # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ])
         return model
     
@@ -276,7 +297,6 @@ class DCGAN():
         """
         model = tf.keras.models.Sequential([
         # TODO: implement architecture
-        # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
         tf.keras.layers.Dense(1024, activation='relu', input_shape=(noise_dim,)),
         tf.keras.layers.BatchNormalization(),
@@ -287,7 +307,6 @@ class DCGAN():
         tf.keras.layers.BatchNormalization(),
         tf.keras.layers.Conv2DTranspose(1, 4, strides=(2, 2), activation='tanh', padding='same')
 
-        # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ])
         return model
     
@@ -298,6 +317,8 @@ class SRGAN():
         self.l = intermediate_layer
         self.D = self.discriminator()
         self.G = self.generator(num_residual_blocks)
+        self.VGG = self.setup_vgg()
+
         
     def discriminator(self):
         """Compute discriminator score for a batch of input images.
@@ -310,9 +331,6 @@ class SRGAN():
         for an image being real for each input image.
         """
         model = tf.keras.models.Sequential([
-            # TODO: implement architecture
-            # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
             tf.keras.layers.Reshape(target_shape=(DIM,DIM,1), input_shape=(INPUT,)),
             tf.keras.layers.Conv2D(filters=64, kernel_size=(3,3), strides=1,
                                   padding='same'),
@@ -357,8 +375,6 @@ class SRGAN():
             tf.keras.layers.Dense(units=1024),
             tf.keras.layers.LeakyReLU(alpha=0.01),
             tf.keras.layers.Dense(units=1)
-
-            # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ])
         
         ## Add feature mapping
@@ -372,6 +388,24 @@ class SRGAN():
     def generator(self, num_residual_blocks):
         model = ResNetGenerator(num_residual_blocks)
         return model
+    
+    def setup_vgg(self, ):
+        image_shape = (32, 32, 3) # minimum shape
+        vgg = VGG16(include_top=False, weights='imagenet', input_shape=image_shape)
+        loss_model = tf.keras.Model(inputs=vgg.input, outputs=vgg.get_layer('block3_conv3').output)
+        loss_model.trainable = False
+        return loss_model
+    
+    def vgg_content_loss(self, real_data, gen_data):
+        N, D = tf.shape(real_data)
+        real_data = tf.reshape(real_data, (N, DIM, DIM, 1))
+        gen_data = tf. reshape(gen_data, (N, DIM, DIM, 1))
+        
+        real_data = tf.image.grayscale_to_rgb(real_data)
+        gen_data = tf.image.grayscale_to_rgb(gen_data)
+        
+        loss = tf.reduce_mean(tf.square(self.VGG(real_data) - self.VGG(gen_data)))
+        return loss
 
 
 class ResidualBlock(tf.keras.Model):
@@ -449,7 +483,7 @@ class ResNetGenerator(tf.keras.Model):
         self.conv2 = tf.keras.layers.Conv2D(filters=1, kernel_size=[9,9], 
                                            strides=1, padding='same')#,
 #                                            activation='tanh')
-        self.shapeout = tf.keras.layers.Reshape((784,))
+        self.shapeout = tf.keras.layers.Reshape((INPUT,))
         self.num_blocks = num_blocks
         kernels, filters = [[3, 3], [3, 3]], [64, 64]
         self.rbs = ResBlockSequence(kernels, filters, self.num_blocks)
