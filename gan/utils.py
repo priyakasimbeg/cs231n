@@ -8,7 +8,7 @@ import os
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 
-DIM = 28
+DIM = 32
 NOISE_DIM = DIM * DIM
 
 plt.rcParams['figure.figsize'] = (10.0, 8.0) # set default size of plots
