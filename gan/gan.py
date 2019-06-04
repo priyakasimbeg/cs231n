@@ -5,7 +5,6 @@ from gan.utils import *
 from gan.metrics import *
 
 # Constants
-NUM_RESIDUAL_BLOCKS = 5
 DIM = 28
 NOISE_DIM = DIM * DIM
 INPUT = DIM * DIM
@@ -141,7 +140,10 @@ def get_solvers(dlr=1e-4, glr=1e-3, beta1=0.5):
 # a giant helper function
 def run_a_gan(D, G, D_solver, G_solver, discriminator_loss, generator_loss,\
               show_every=20, print_every=20, batch_size=100, num_epochs=10, 
-              input_size=NOISE_DIM, gen_reg=5e-5, tv_reg=1e-4, gen_steps_per_discrimination=1):
+              input_size=NOISE_DIM, 
+              gen_reg=5e-5, tv_reg=1e-4, feat_reg=1e-1,
+              late_dlr=4e-7, late_glr=5e-7, 
+              gen_steps_per_discrimination=1):
     """Train a GAN for a certain number of epochs.
     
     Inputs:
@@ -155,12 +157,17 @@ def run_a_gan(D, G, D_solver, G_solver, discriminator_loss, generator_loss,\
         Nothing
     """
     epid = EPID(batch_size=batch_size)
-    phantom = PHANTOM(batch_size=batch_size, fake=True) 
+    phantom = PHANTOM(batch_size=batch_size, fake=False) 
 
     g_errors = []
     d_errors = []
     iter_count = 0
     for epoch in range(num_epochs):
+
+        #Decrease learning rate for later epochs
+        if epoch == 150:
+            D_solver, G_solver = get_solvers(dlr=late_dlr, glr=late_glr)
+            
         for x, y in zip(epid, phantom):
             with tf.GradientTape() as tape:
                 real_data = x
@@ -173,10 +180,13 @@ def run_a_gan(D, G, D_solver, G_solver, discriminator_loss, generator_loss,\
                 intermediate_fake, logits_fake = D(tf.reshape(fake_images, [batch_size, INPUT]))
 
                 d_total_error = discriminator_loss(logits_real, logits_fake)
+                
+                
+                
                 d_gradients = tape.gradient(d_total_error, D.trainable_variables)      
                 D_solver.apply_gradients(zip(d_gradients, D.trainable_variables))
                 
-            
+                
             for j in range(gen_steps_per_discrimination):
                 with tf.GradientTape() as tape:
     #                 g_fake_seed = sample_noise(batch_size, input_size)
@@ -186,8 +196,14 @@ def run_a_gan(D, G, D_solver, G_solver, discriminator_loss, generator_loss,\
                     gen_intermediate_fake, gen_logits_fake = D(tf.reshape(fake_images, [batch_size, INPUT]))
                     fake_images = tf.keras.layers.Reshape((DIM,DIM,1))(fake_images)
                     
-                    g_error = effective_generator_loss(real_data, fake_images, gen_logits_fake, batch_size, tv_reg,
-                                                       gen_reg,intermediate_real, gen_intermediate_fake)
+                    g_error = effective_generator_loss(real_data, fake_images, 
+                                                       gen_logits_fake, batch_size,
+                                                       tv_reg, gen_reg, feat_reg,
+                                                       intermediate_real, gen_intermediate_fake)
+                    
+                    #Decrease generator learning steps when error is low
+                    if g_error < 1: 
+                        gen_steps_per_discrimination = max(2, gen_steps_per_discrimination)
                     
                     g_gradients = tape.gradient(g_error, G.trainable_variables)      
                     G_solver.apply_gradients(zip(g_gradients, G.trainable_variables))
@@ -204,9 +220,11 @@ def run_a_gan(D, G, D_solver, G_solver, discriminator_loss, generator_loss,\
             d_errors.append(d_total_error)
     
     # random noise fed into our generator
-    z = sample_noise(batch_size, input_size)
+    phantom = PHANTOM(batch_size, shuffle=True)
     # generated images
-    G_sample = G(z)
+    for x in phantom: 
+        G_sample = G(x)
+        break
     print('Final images')
     show_images(G_sample[:16])
     plt.show()
@@ -217,18 +235,21 @@ def run_a_gan(D, G, D_solver, G_solver, discriminator_loss, generator_loss,\
 
 def feature_mapping_loss(intermediate_real, gen_intermediate_fake):
     
-    return tf.reduce_sum(tf.square(tf.reduce_mean(intermediate_real, axis=0) - tf.reduce_mean(gen_intermediate_fake, axis=0)))
+    return tf.reduce_sum(tf.square(tf.reduce_mean(intermediate_real, axis=0) 
+                                   - tf.reduce_mean(gen_intermediate_fake, axis=0)))
 
     
-def effective_generator_loss(real_data, fake_data, gen_logits_fake, batch_size, tv_reg, gen_reg,
-                            intermediate_real, gen_intermediate_fake):
+def effective_generator_loss(real_data, fake_data, gen_logits_fake, batch_size, 
+                             tv_reg, gen_reg, feat_reg,
+                             intermediate_real, gen_intermediate_fake):
     
     gen_loss = generator_loss(gen_logits_fake)
-    mse_loss = mse(real_data, tf.reshape(fake_data, [batch_size, INPUT])) 
+    l1_loss = tf.norm(real_data - tf.reshape(fake_data, [batch_size, INPUT]), ord=1) 
+#     mse_loss = mse(real_data, tf.reshape(fake_data, [batch_size, INPUT])) 
     tv_loss = tv_reg * tf.reduce_sum(tf.image.total_variation(fake_data))
     fm_loss = feature_mapping_loss(intermediate_real, gen_intermediate_fake)
     
-    return gen_reg * gen_loss + mse_loss + fm_loss + tv_reg * tv_loss
+    return gen_reg * gen_loss + l1_loss + feat_reg * fm_loss + tv_reg * tv_loss
 
 class DCGAN():
     def __init__(self):
@@ -407,11 +428,13 @@ class ResBlockSequence(tf.keras.Model):
         self.conv = tf.keras.layers.Conv2D(filters=64, kernel_size=[3,3],
                                            strides=1, padding='same')
         self.bn = tf.keras.layers.BatchNormalization()
+        self.rb = {}
+        for block in range(num_blocks):
+            self.rb[block] = ResidualBlock(self.kernels, self.filters)
         
     def call(self, x):
         for block in range(self.num_blocks):
-            rb = ResidualBlock(self.kernels, self.filters)
-            x += rb(x)
+            x += self.rb[block](x)
         x = self.conv(x)
         x = self.bn(x)
         return x
@@ -442,19 +465,18 @@ class ResNetGenerator(tf.keras.Model):
     def __init__(self, num_blocks):
         super(ResNetGenerator, self).__init__() 
         self.shapein = tf.keras.layers.Reshape((DIM, DIM, 1), input_shape=(INPUT,))
-        self.conv1 = tf.keras.layers.Conv2D(filters=64, kernel_size=[9,9],
+        self.conv1 = tf.keras.layers.Conv2DTranspose(filters=64, kernel_size=[9,9],
                                            strides=1, padding='same')
         self.prelu1 = tf.keras.layers.LeakyReLU()
         
-        self.conv2 = tf.keras.layers.Conv2D(filters=1, kernel_size=[9,9], 
-                                           strides=1, padding='same')#,
-#                                            activation='tanh')
+        self.conv2 = tf.keras.layers.Conv2DTranspose(filters=1, kernel_size=[9,9], 
+                                           strides=1, padding='same',
+                                           activation='tanh')
         self.shapeout = tf.keras.layers.Reshape((784,))
         self.num_blocks = num_blocks
         kernels, filters = [[3, 3], [3, 3]], [64, 64]
         self.rbs = ResBlockSequence(kernels, filters, self.num_blocks)
         self.sb = SmoothingBlock(kernels, [256, 256])
-
         
     def call(self, x, training=False):
         x = self.shapein(x)
