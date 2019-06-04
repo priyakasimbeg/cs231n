@@ -138,10 +138,9 @@ def get_solvers(dlr=1e-4, glr=1e-3, beta1=0.5):
     return D_solver, G_solver
 
 # a giant helper function
-def run_a_gan(D, G, D_solver, G_solver, discriminator_loss, generator_loss,\
+def run_a_gan(D, G, D_solver, G_solver, L,
               show_every=20, print_every=20, batch_size=100, num_epochs=10, 
               input_size=NOISE_DIM, 
-              gen_reg=5e-5, tv_reg=1e-4, feat_reg=1e-1,
               late_dlr=4e-7, late_glr=5e-7, 
               gen_steps_per_discrimination=1):
     """Train a GAN for a certain number of epochs.
@@ -157,7 +156,7 @@ def run_a_gan(D, G, D_solver, G_solver, discriminator_loss, generator_loss,\
         Nothing
     """
     epid = EPID(batch_size=batch_size)
-    phantom = PHANTOM(batch_size=batch_size, fake=False) 
+    phantom = PHANTOM(batch_size=batch_size, fake=True) 
 
     g_errors = []
     d_errors = []
@@ -178,9 +177,10 @@ def run_a_gan(D, G, D_solver, G_solver, discriminator_loss, generator_loss,\
                 fake_images = G(g_fake_seed)
 
                 intermediate_fake, logits_fake = D(tf.reshape(fake_images, [batch_size, INPUT]))
-
-                d_total_error = discriminator_loss(logits_real, logits_fake)
                 
+                #Compute discriminator loss
+                L.update_discriminator_loss(logits_real, logits_fake)
+                d_total_error = L.get_discriminator_loss()
                 
                 
                 d_gradients = tape.gradient(d_total_error, D.trainable_variables)      
@@ -194,12 +194,18 @@ def run_a_gan(D, G, D_solver, G_solver, discriminator_loss, generator_loss,\
                     fake_images = G(g_fake_seed)
 
                     gen_intermediate_fake, gen_logits_fake = D(tf.reshape(fake_images, [batch_size, INPUT]))
-                    fake_images = tf.keras.layers.Reshape((DIM,DIM,1))(fake_images)
+# #                     fake_images = tf.keras.layers.Reshape((DIM,DIM,1))(fake_images)
                     
-                    g_error = effective_generator_loss(real_data, fake_images, 
-                                                       gen_logits_fake, batch_size,
-                                                       tv_reg, gen_reg, feat_reg,
-                                                       intermediate_real, gen_intermediate_fake)
+#                     g_error = effective_generator_loss(real_data, fake_images, 
+#                                                        gen_logits_fake, batch_size,
+#                                                        tv_reg, gen_reg, feat_reg,
+#                                                        intermediate_real, 
+#                                                        gen_intermediate_fake)
+
+                    #Compute generator loss
+                    L.update_generator_loss(real_data, fake_images, gen_logits_fake, 
+                                            intermediate_real, gen_intermediate_fake)
+                    g_error = L.get_generator_loss()
                     
                     #Decrease generator learning steps when error is low
                     if g_error < 1: 
@@ -218,6 +224,8 @@ def run_a_gan(D, G, D_solver, G_solver, discriminator_loss, generator_loss,\
             iter_count += 1
             g_errors.append(g_error)
             d_errors.append(d_total_error)
+            
+    G.save_weights('generator_weights.h5')
     
     # random noise fed into our generator
     phantom = PHANTOM(batch_size, shuffle=True)
@@ -232,12 +240,88 @@ def run_a_gan(D, G, D_solver, G_solver, discriminator_loss, generator_loss,\
     
     return g_errors, d_errors
 
+class Loss():
+    def __init__(self, gen_reg, tv_reg, feat_reg, l1_reg=True, vgg_reg=False, 
+                 ls_disc=False):
+        self.losses = {}
+        self.losses['Generator loss'] = []
+        self.losses['Total Variation loss'] = []
+        self.losses['L1 content loss'] = []
+        self.losses['MSE loss'] = []
+        self.losses['Feature content loss'] = []
+        self.losses['VGG content loss'] = []
+        self.losses['Total loss'] = []
+        self.losses['Discriminator loss'] = []
+        self.l1_reg = l1_reg
+        self.gen_reg = gen_reg
+        self.tv_reg = tv_reg
+        self.feat_reg = feat_reg
+        self.vgg_reg = vgg_reg
+        self.ls_disc = ls_disc
+    
+    def update_generator_loss(self, real_data, fake_images, gen_logits_fake, 
+                    intermediate_real, gen_intermediate_fake):
+        
+        self.losses['Generator loss'].append(generator_loss(gen_logits_fake))
+        self.losses['Total Variation loss'].append(tv_loss(fake_images))
+        self.losses['L1 content loss'].append(l1_content_loss(real_data, fake_images))
+        self.losses['MSE loss'].append(mse_loss(real_data, fake_images)) 
+        self.losses['Feature content loss'].append(feature_mapping_loss(intermediate_real, gen_intermediate_fake))
+    
+    def update_discriminator_loss(self, logits_real, logits_fake):
+        if self.ls_disc:
+            loss = discriminator_loss(logits_real, logits_fake)
+        else:
+            loss = ls_discriminator_loss(logits_real, logits_fake)
+        
+        #Record iteration loss
+        self.losses['Discriminator loss'].append(loss)
+        
+    def get_generator_loss(self):
+        loss = self.gen_reg * self.losses['Generator loss'][-1]
+        loss += self.tv_reg * self.losses['Total Variation loss'][-1] 
+        #Use branching to avoid extraneous gradient computations
+        if self.l1_reg:
+            loss += self.losses['L1 content loss'][-1]
+        else:
+            loss += self.losses['MSE loss'][-1]
+        if self.vgg_reg:
+            loss += self.feat_reg * self.losses['VGG content loss'][-1]
+        else:
+            loss += self.feat_reg * self.losses['Feature content loss'][-1]
+        
+        #Record total iteration loss
+        self.losses['Total loss'].append(loss)
+        return loss
+    
+    def get_discriminator_loss(self):
+        return self.losses['Discriminator loss'][-1]
+    
+    def get_loss_plots(self):
+        plots = {}
+        for loss in self.losses:
+            fig = plt.figure()
+            plt.plot(self.losses[loss], figure=fig)
+            plt.xlabel('Iteration number')
+            plt.ylabel('Loss')
+            plt.title(loss)
+            plots[loss] = fig
+        return plots
+        
+    
+def tv_loss(fake_data):
+    fake_data = tf.reshape(fake_data, (-1, DIM, DIM, 1))
+    return tf.reduce_sum(tf.image.total_variation(fake_data))
+
+def l1_content_loss(real_data, fake_data):
+    return tf.norm(real_data - fake_data, ord=1) 
+
+def mse_loss(real_data, fake_data):
+    return tf.square(tf.reduce_sum(real_data - fake_data)) / tf.cast(tf.size(real_data), tf.float32)
 
 def feature_mapping_loss(intermediate_real, gen_intermediate_fake):
-    
     return tf.reduce_sum(tf.square(tf.reduce_mean(intermediate_real, axis=0) 
                                    - tf.reduce_mean(gen_intermediate_fake, axis=0)))
-
     
 def effective_generator_loss(real_data, fake_data, gen_logits_fake, batch_size, 
                              tv_reg, gen_reg, feat_reg,
