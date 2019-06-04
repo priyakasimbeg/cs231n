@@ -315,7 +315,7 @@ class DCGAN():
     
 class SRGAN():
     
-    def __init__(self, num_residual_blocks, intermediate_layer=3):
+    def __init__(self, num_residual_blocks, intermediate_layer=6):
         self.l = intermediate_layer
         self.D = self.discriminator()
         self.G = self.generator(num_residual_blocks)
@@ -332,7 +332,6 @@ class SRGAN():
         """
         model = tf.keras.models.Sequential([
             # TODO: implement architecture
-            # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
             tf.keras.layers.Reshape(target_shape=(DIM,DIM,1), input_shape=(INPUT,)),
             tf.keras.layers.Conv2D(filters=64, kernel_size=(3,3), strides=1,
@@ -379,7 +378,6 @@ class SRGAN():
             tf.keras.layers.LeakyReLU(alpha=0.01),
             tf.keras.layers.Dense(units=1)
 
-            # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ])
         
         ## Add feature mapping
