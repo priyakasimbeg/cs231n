@@ -192,9 +192,14 @@ def array_to_tensor(x):
     return tf.multiply(x, 1)
 
 def tensor_to_array(x):
-    _, H, W, _ = x.shape.as_list()      
+    _, H, W, _ = x.shape  
     x = np.reshape(x, (H, W))
     return x 
+
+def tensor_to_1darray(x):
+    N, H, W, _ = x.shape  
+    x = np.reshape(x, (N, H*W))
+    return x
 
 def array_batch_to_tensor(x):
     N, D = np.shape(x)
