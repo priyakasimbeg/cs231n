@@ -30,18 +30,19 @@ def mse(x, y):
 def psnr(x, y):
     """
     Computes the Peak Signal to Noise Ratio (PSNR) between two images.
-    x, y: Tensors of shape (1, H, W, 1)
+    x, y: Tensors of shape (N, H, W, 1)
     """
-    return float(tf.image.psnr(x, y, 1))
+    return tf.image.psnr(x, y, 1)
 
 
 def ssim(x, y):
     """
     Computes the structural similarity index between two images.
+    x, y: tensors of shape(N, H, W, 1)
     """
     x = tf.image.convert_image_dtype(x, tf.float32)
     y = tf.image.convert_image_dtype(y, tf.float32)
-    return float(tf.image.ssim(x, y, 1))
+    return tf.image.ssim(x, y, 1)
 
 
 def wiener(x):

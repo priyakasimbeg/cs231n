@@ -16,6 +16,8 @@ plt.rcParams['image.interpolation'] = 'nearest'
 plt.rcParams['image.cmap'] = 'gray'
 
 # A bunch of utility functions
+
+# Plotting functions
 def show_images(images):
     images = np.reshape(images, [images.shape[0], -1])  # images reshape to (batch_size, D)
     sqrtn = int(np.ceil(np.sqrt(images.shape[0])))
@@ -33,6 +35,38 @@ def show_images(images):
         ax.set_aspect('equal')
         plt.imshow(img.reshape([sqrtimg,sqrtimg]))
     return
+
+def show_images_set(image_set, labels = ['(a)', '(b)', '(c)']):
+    
+    assert(len(image_set) == len(labels))
+    
+    images = image_set[0]
+    images = np.reshape(images, [images.shape[0], -1])  # images reshape to (batch_size, D)
+    sqrtn = int(np.ceil(np.sqrt(images.shape[0])))
+    sqrtimg = int(np.ceil(np.sqrt(images.shape[1])))
+    
+    fig = plt.figure(figsize=(len(image_set) * sqrtn, sqrtn))
+    outer_grid = gridspec.GridSpec(1, len(image_set)) # gridspec with two adjacent horizontal cells
+    outer_grid.update(wspace=0.15, hspace=0.05)
+
+    for j, images in enumerate(image_set):
+        cell = outer_grid[0,j] # the subplotspec within outer grid
+        gs = gridspec.GridSpecFromSubplotSpec(sqrtn, sqrtn, cell)
+        
+        images = np.reshape(images, [images.shape[0], -1])  # images reshape to (batch_size, D)
+        
+        
+        for i, img in enumerate(images):
+            ax = plt.subplot(gs[i])
+            plt.axis('off')
+            ax.set_xticklabels([])
+            ax.set_yticklabels([])
+            ax.set_aspect('equal')
+            if i == 0:
+                ax.set_title(labels[j], fontsize=16)
+            plt.imshow(img.reshape([sqrtimg, sqrtimg]))
+            
+    return fig
 
 def preprocess_img(x):
     return 2 * x - 1.0
@@ -95,14 +129,17 @@ class EPID(object):
         X = X.astype(np.float32)/255
         X = X.reshape((X.shape[0], -1))
         self.X = X
+        self.train = X[:200]
+        self.val = X[200:250]
+        self.test = X[250:300]
         self.batch_size, self.shuffle = batch_size, shuffle
         
     def __iter__(self):
-        N, B = self.X.shape[0], self.batch_size
+        N, B = self.train.shape[0], self.batch_size
         idxs = np.arange(N)
         if self.shuffle:
             np.random.shuffle(idxs)
-        return iter((self.X[i:i+B]) for i in range(0, N, B)) 
+        return iter((self.train[i:i+B]) for i in range(0, N, B)) 
     
     def get_tensor(self, index):
         image = self.X[index]
@@ -127,14 +164,17 @@ class PHANTOM(object):
         X = X.astype(np.float32)/255
         X = X.reshape((X.shape[0], -1))
         self.X = X
+        self.train = X[:200]
+        self.val = X[200:250]
+        self.test = X[250:300]
         self.batch_size, self.shuffle = batch_size, shuffle
         
     def __iter__(self):
-        N, B = self.X.shape[0], self.batch_size
+        N, B = self.train.shape[0], self.batch_size
         idxs = np.arange(N)
         if self.shuffle:
             np.random.shuffle(idxs)
-        return iter((self.X[i:i+B]) for i in range(0, N, B))
+        return iter((self.train[i:i+B]) for i in range(0, N, B))
     
     def get_tensor(self, index):
         image = self.X[index]
@@ -155,6 +195,13 @@ def tensor_to_array(x):
     _, H, W, _ = x.shape.as_list()      
     x = np.reshape(x, (H, W))
     return x 
+
+def array_batch_to_tensor(x):
+    N, D = np.shape(x)
+    H = int(np.sqrt(D))
+    x = np.reshape(x, (N, H, H, 1))
+    
+    return tf.multiply(x, 1)
 
 def plot_tensor(x):
     """

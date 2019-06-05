@@ -130,13 +130,12 @@ def get_solvers(dlr=1e-4, glr=1e-3, beta1=0.5):
     return D_solver, G_solver
 
 # a giant helper function
-def run_a_gan(GAN, D_solver, G_solver, L,
-              show_every=20, print_every=20, batch_size=100, num_epochs=10, 
+def run_a_gan(GAN, D_solver, G_solver, L, L_validation,
+              show_every=20, print_every=20, batch_size=50, num_epochs=10, 
               input_size=NOISE_DIM, 
               late_dlr=4e-7, late_glr=5e-7, 
-              gen_steps_per_discrimination=1):
+              gen_steps_per_discrimination=1, model_name='gan'):
     """Train a GAN for a certain number of epochs.
-    
     Inputs:
     - D: Discriminator model
     - G: Generator model
@@ -156,6 +155,14 @@ def run_a_gan(GAN, D_solver, G_solver, L,
     g_errors = []
     d_errors = []
     iter_count = 0
+    
+    ## Setup storing stuff
+    if not os.path.exists('train/{}'.format(model_name)):
+        os.makedirs('train/{}'.format(model_name))
+    
+    if not os.path.exists('train/{}/images'.format(model_name)):
+        os.makedirs('train/{}/images'.format(model_name))
+    
     for epoch in range(num_epochs):
 
         #Decrease learning rate for later epochs
@@ -183,14 +190,20 @@ def run_a_gan(GAN, D_solver, G_solver, L,
                 d_gradients = tape.gradient(d_total_error, D.trainable_variables)      
                 D_solver.apply_gradients(zip(d_gradients, D.trainable_variables))
                 
-                
+                ## Validation
+                intermediate_real_val, logits_real_val = D(preprocess_img(epid.val))
+                fake_images_val = G(phantom.val)
+                intermediate_fake_val, logits_fake_val = D(tf.reshape(fake_images_val, [batch_size, INPUT]))
+                L_validation.update_discriminator_loss(logits_real_val, logits_fake_val)
+                _ = L_validation.get_discriminator_loss()
+                                                           
+                       
             for j in range(gen_steps_per_discrimination):
                 with tf.GradientTape() as tape:
                     g_fake_seed = y
                     fake_images = G(g_fake_seed)
 
                     gen_intermediate_fake, gen_logits_fake = D(tf.reshape(fake_images, [batch_size, INPUT]))
-
 
                     #Compute generator loss
                     L.update_generator_loss(real_data, fake_images, gen_logits_fake, 
@@ -203,19 +216,28 @@ def run_a_gan(GAN, D_solver, G_solver, L,
                     
                     g_gradients = tape.gradient(g_error, G.trainable_variables)      
                     G_solver.apply_gradients(zip(g_gradients, G.trainable_variables))
+                    
+                    ## Validation
+                    g_fake_seed_val = phantom.val
+                    fake_images_val = G(phantom.val)
+                    gen_intermediate_fake_val, gen_logits_fake_val = D(tf.reshape(fake_images_val, [batch_size, INPUT]))
+                    L_validation.update_generator_loss(epid.val, fake_images_val, gen_logits_fake_val, intermediate_real_val,
+                                                       gen_intermediate_fake_val, GAN.VGG)
+                    _ = L_validation.get_generator_loss()
+                    
 
             if (iter_count % show_every == 0):
                 print('Epoch: {}, Iter: {}, D: {:.4}, G:{:.4}'.format(epoch, iter_count,d_total_error,g_error))
                 imgs_numpy = fake_images.cpu().numpy()
                 show_images(imgs_numpy[0:16])
-                plt.savefig('images_{}.png'.format(iter_count))
+                plt.savefig('train/{}/images/{}.png'.format(model_name, iter_count))
                 plt.show()
 
             iter_count += 1
             g_errors.append(g_error)
             d_errors.append(d_total_error)
             
-    G.save_weights('generator_weights.h5')
+    G.save_weights('train/{}/{}.h5'.format(model_name, model_name))
     
     # random noise fed into our generator
     phantom = PHANTOM(batch_size, shuffle=True)
@@ -226,7 +248,7 @@ def run_a_gan(GAN, D_solver, G_solver, L,
     print('Final images')
     show_images(G_sample[:16])
     plt.show()
-    plt.savefig('final_images.png')
+    plt.savefig('train/{}/images/final_images.png'.format(model_name))
     
     return g_errors, d_errors
 
@@ -300,14 +322,14 @@ class Loss():
             plots[loss] = fig
         return plots
 
- def vgg_content_loss(real_data, gen_data, feature_extractor):
+def vgg_content_loss(real_data, gen_data, feature_extractor):
         N, D = tf.shape(real_data)
         real_data = tf.reshape(real_data, (N, DIM, DIM, 1))
         gen_data = tf. reshape(gen_data, (N, DIM, DIM, 1))
 
         real_data = tf.image.grayscale_to_rgb(real_data)
         gen_data = tf.image.grayscale_to_rgb(gen_data)
-        loss = tf.reduce_mean(tf.square(feature_extractor(real_data) - feature_extractor(gen_data)))
+        loss = tf.reduce_mean(tf.norm(feature_extractor(real_data) - feature_extractor(gen_data)))
         return loss
     
 def tv_loss(fake_data):
@@ -554,7 +576,7 @@ class ResNetGenerator(tf.keras.Model):
         self.conv2 = tf.keras.layers.Conv2DTranspose(filters=1, kernel_size=[9,9], 
                                            strides=1, padding='same',
                                            activation='tanh')
-        self.shapeout = tf.keras.layers.Reshape((784,))
+        self.shapeout = tf.keras.layers.Reshape((INPUT,))
         self.num_blocks = num_blocks
         kernels, filters = [[3, 3], [3, 3]], [64, 64]
         self.rbs = ResBlockSequence(kernels, filters, self.num_blocks)
